@@ -19,6 +19,7 @@ import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
@@ -41,12 +42,17 @@ import com.wdullaer.materialdatetimepicker.date.DatePickerDialog;
 
 import net.sf.scuba.smartcards.CardFileInputStream;
 import net.sf.scuba.smartcards.CardService;
+import net.sf.scuba.util.Hex;
 
 import org.apache.commons.io.IOUtils;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.cms.SignedData;
+import org.bouncycastle.asn1.icao.DataGroupHash;
+import org.bouncycastle.asn1.icao.LDSSecurityObject;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.jmrtd.BACKey;
 import org.jmrtd.BACKeySpec;
@@ -58,6 +64,7 @@ import org.jmrtd.lds.SecurityInfo;
 import org.jmrtd.lds.icao.DG14File;
 import org.jmrtd.lds.icao.DG1File;
 import org.jmrtd.lds.icao.DG2File;
+import org.jmrtd.lds.icao.DG7File;
 import org.jmrtd.lds.icao.MRZInfo;
 import org.jmrtd.lds.iso19794.FaceImageInfo;
 import org.jmrtd.lds.iso19794.FaceInfo;
@@ -67,6 +74,8 @@ import org.jmrtd.lds.PACEInfo;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -77,6 +86,7 @@ import java.security.cert.CertPathValidator;
 import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPublicKey;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.PSSParameterSpec;
 import java.text.ParseException;
@@ -88,6 +98,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.jmrtd.PassportService.DEFAULT_MAX_BLOCKSIZE;
 import static org.jmrtd.PassportService.NORMAL_MAX_TRANCEIVE_LENGTH;
@@ -331,14 +342,35 @@ public class MainActivity extends AppCompatActivity {
         return s.toString();
     }
 
+    private class ProofTask extends AsyncTask<Void, Void, Exception> {
+        private void callProver() {
+            RapidSnark rs = new RapidSnark();
+            byte[] proof = new byte[1024], publicInputs = new byte[2048], error = new byte[1024];
+            AssetManager mgr = getAssets();
+            boolean res = rs.prove(mgr, "circuit_final.zkey", "w.wtns", proof, publicInputs, error);
+            Log.w(TAG, "Resolved!" + res);
+            Log.w(TAG, "Proof: " + new String(proof));
+            Log.w(TAG, "Inputs: " + new String(publicInputs));
+            Log.w(TAG, "Error: " + new String(error));
+        }
+
+        @Override
+        protected Exception doInBackground(Void... voids) {
+            callProver();
+            return null;
+        }
+    }
+
     private class ReadTask extends AsyncTask<Void, Void, Exception> {
 
         private IsoDep isoDep;
         private BACKeySpec bacKey;
+        private ProofData proofData;
 
         private ReadTask(IsoDep isoDep, BACKeySpec bacKey) {
             this.isoDep = isoDep;
             this.bacKey = bacKey;
+            this.proofData = new ProofData();
         }
 
         private DG1File dg1File;
@@ -381,6 +413,10 @@ public class MainActivity extends AppCompatActivity {
                 MessageDigest digest = MessageDigest.getInstance(sodFile.getDigestAlgorithm());
 
                 Map<Integer,byte[]> dataHashes = sodFile.getDataGroupHashes();
+
+                for (Map.Entry<Integer, byte[]> e : dataHashes.entrySet()) {
+                    Log.w(TAG, String.format( "Hash %d: %s", e.getKey(), Base64.encodeToString(e.getValue(), Base64.DEFAULT )));
+                }
 
                 byte[] dg14Hash = new byte[0];
                 if(chipAuthSucceeded) {
@@ -440,10 +476,32 @@ public class MainActivity extends AppCompatActivity {
                     if (isSSA) {
                         sign.setParameter(new PSSParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, 32, 1));
                     }
-
                     sign.initVerify(sodFile.getDocSigningCertificate());
                     sign.update(sodFile.getEContent());
+
+
                     passiveAuthSuccess = sign.verify(sodFile.getEncryptedDigest());
+
+                    this.proofData.setEc(sodFile.getEContent());
+                    this.proofData.setSignature(sodFile.getEncryptedDigest());
+
+                    //Get EncapContent (data group hashes) using reflection
+                    Method getENC = SODFile.class.getDeclaredMethod("getLDSSecurityObject", SignedData.class);
+                    getENC.setAccessible(true);
+                    Field signedDataField = sodFile.getClass().getDeclaredField("signedData");
+                    signedDataField.setAccessible(true);
+                    SignedData signedData = (SignedData) signedDataField.get(sodFile);
+                    LDSSecurityObject ldsso = (LDSSecurityObject) getENC.invoke(sodFile, signedData);
+
+                    this.proofData.setEncapContent(ldsso.getEncoded());
+
+                    RSAPublicKey pk = (RSAPublicKey) sodFile.getDocSigningCertificate().getPublicKey();
+                    this.proofData.setDscRsaMod(Hex.hexStringToBytes(pk.getModulus().toString(16)));
+
+                    assert Hex.bytesToHexString(pk.getPublicExponent().toByteArray()).equals("010001"); //The only exponent we support
+
+                    this.proofData.verify();
+                    Log.w(TAG, this.proofData.exportJson());
                 }
             }
             catch (Exception e) {
@@ -487,6 +545,7 @@ public class MainActivity extends AppCompatActivity {
 
                 CardFileInputStream dg1In = service.getInputStream(PassportService.EF_DG1);
                 dg1File = new DG1File(dg1In);
+                this.proofData.setMrz(dg1File.getEncoded());
 
                 CardFileInputStream dg2In = service.getInputStream(PassportService.EF_DG2);
                 dg2File = new DG2File(dg2In);
@@ -590,5 +649,4 @@ public class MainActivity extends AppCompatActivity {
         }
 
     }
-
 }
