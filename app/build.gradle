@@ -2,15 +2,25 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion 31
-    ndkVersion '23.1.7779620'
+    ndkVersion '24.0.8215888'
 
     defaultConfig {
         applicationId 'com.tananaev.passportreader'
-        minSdkVersion 15
+        minSdkVersion 23 //Re: https://github.com/KeepSafe/ReLinker is needed for SDK below 23.
         targetSdkVersion 31
         versionCode 17
         versionName "2.2"
         multiDexEnabled = true
+        externalNativeBuild {
+            ndkBuild {
+                cppFlags ''
+            }
+        }
+        ndk {
+            // Specifies the ABI configurations of your native
+            // libraries Gradle should build and package with your app.
+            abiFilters 'arm64-v8a'
+        }
     }
     packagingOptions {
         exclude 'META-INF/LICENSE'
@@ -22,6 +32,11 @@ android {
     compileOptions {
         sourceCompatibility = 1.8
         targetCompatibility = 1.8
+    }
+    externalNativeBuild {
+        ndkBuild {
+            path file('jni/rapidsnark/Android.mk')
+        }
     }
 }
 
