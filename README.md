@@ -5,7 +5,7 @@ Warning! This is an academic-grade prototype and as such it does not claim to wo
 This app scans NFC-enabled Machine Readable Travel Documents, such as international passports, and extracts the relevant cryptographic data for proofs using our [circom verifier](https://github.com/OutDID-io/passport-verifier-circom). It also integrates a natively compiled version of `rapidsnark` that can execute proofs in the app.
 
 What this app can do right now:
-- Scan some international passports (tested with a European passport) and generate the relevant `inputs.json` file in the format requested by our []circom verifier](https://github.com/OutDID-io/passport-verifier-circom)
+- Scan some international passports (tested with a European passport) and generate the relevant `inputs.json` file in the format requested by our [circom verifier](https://github.com/OutDID-io/passport-verifier-circom)
 - Given a witness file `w.wtns`, which can be easily derived from `inputs.json`, it can generate a proof of our circom circuit. In particular, that this passport is valid and unaltered.
 
 What is work in progress:
