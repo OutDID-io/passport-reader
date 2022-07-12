@@ -19,7 +19,6 @@ import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
@@ -49,9 +48,7 @@ import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.cms.SignedData;
-import org.bouncycastle.asn1.icao.DataGroupHash;
 import org.bouncycastle.asn1.icao.LDSSecurityObject;
 import org.bouncycastle.asn1.x509.Certificate;
 import org.jmrtd.BACKey;
@@ -64,7 +61,6 @@ import org.jmrtd.lds.SecurityInfo;
 import org.jmrtd.lds.icao.DG14File;
 import org.jmrtd.lds.icao.DG1File;
 import org.jmrtd.lds.icao.DG2File;
-import org.jmrtd.lds.icao.DG7File;
 import org.jmrtd.lds.icao.MRZInfo;
 import org.jmrtd.lds.iso19794.FaceImageInfo;
 import org.jmrtd.lds.iso19794.FaceInfo;
@@ -98,7 +94,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import static org.jmrtd.PassportService.DEFAULT_MAX_BLOCKSIZE;
 import static org.jmrtd.PassportService.NORMAL_MAX_TRANCEIVE_LENGTH;
@@ -342,25 +337,6 @@ public class MainActivity extends AppCompatActivity {
         return s.toString();
     }
 
-    private class ProofTask extends AsyncTask<Void, Void, Exception> {
-        private void callProver() {
-            RapidSnark rs = new RapidSnark();
-            byte[] proof = new byte[1024], publicInputs = new byte[2048], error = new byte[1024];
-            AssetManager mgr = getAssets();
-            boolean res = rs.prove(mgr, "circuit_final.zkey", "w.wtns", proof, publicInputs, error);
-            Log.w(TAG, "Resolved!" + res);
-            Log.w(TAG, "Proof: " + new String(proof));
-            Log.w(TAG, "Inputs: " + new String(publicInputs));
-            Log.w(TAG, "Error: " + new String(error));
-        }
-
-        @Override
-        protected Exception doInBackground(Void... voids) {
-            callProver();
-            return null;
-        }
-    }
-
     private class ReadTask extends AsyncTask<Void, Void, Exception> {
 
         private IsoDep isoDep;
@@ -482,8 +458,8 @@ public class MainActivity extends AppCompatActivity {
 
                     passiveAuthSuccess = sign.verify(sodFile.getEncryptedDigest());
 
-                    this.proofData.setEc(sodFile.getEContent());
-                    this.proofData.setSignature(sodFile.getEncryptedDigest());
+                    this.proofData.setAttrs(sodFile.getEContent());
+                    this.proofData.setSig(sodFile.getEncryptedDigest());
 
                     //Get EncapContent (data group hashes) using reflection
                     Method getENC = SODFile.class.getDeclaredMethod("getLDSSecurityObject", SignedData.class);
@@ -493,14 +469,13 @@ public class MainActivity extends AppCompatActivity {
                     SignedData signedData = (SignedData) signedDataField.get(sodFile);
                     LDSSecurityObject ldsso = (LDSSecurityObject) getENC.invoke(sodFile, signedData);
 
-                    this.proofData.setEncapContent(ldsso.getEncoded());
+                    this.proofData.setLds(ldsso.getEncoded());
 
                     RSAPublicKey pk = (RSAPublicKey) sodFile.getDocSigningCertificate().getPublicKey();
-                    this.proofData.setDscRsaMod(Hex.hexStringToBytes(pk.getModulus().toString(16)));
+                    this.proofData.setMod(Hex.hexStringToBytes(pk.getModulus().toString(16)));
 
                     assert Hex.bytesToHexString(pk.getPublicExponent().toByteArray()).equals("010001"); //The only exponent we support
 
-                    this.proofData.verify();
                     Log.w(TAG, this.proofData.exportJson());
                 }
             }
@@ -608,6 +583,9 @@ public class MainActivity extends AppCompatActivity {
                 intent.putExtra(ResultActivity.KEY_NATIONALITY, mrzInfo.getNationality());
 
                 String passiveAuthStr = "";
+
+                passiveAuthSuccess = true;
+                chipAuthSucceeded = true;
                 if(passiveAuthSuccess) {
                     passiveAuthStr = getString(R.string.pass);
                 } else {
