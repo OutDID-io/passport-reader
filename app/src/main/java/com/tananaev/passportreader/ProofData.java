@@ -1,5 +1,6 @@
 package com.tananaev.passportreader;
 
+import android.util.Base64;
 import android.util.Log;
 
 import net.sf.scuba.util.Hex;
@@ -12,57 +13,60 @@ import java.util.Arrays;
 
 public class ProofData {
     public static final int BYTES_PER_STRING = 15;
+    public static final int MAX_LDS_LENGTH = 256;
+    public static final int MAX_ATTRS_LENGTH = 128;
+    public static final int MRZ_LENGTH = 93;
+    public static final int MAX_RSA_LENGTH = 512;
 
     private byte[] mrz;
-    private byte[] encapContent;
-    private byte[] ec;
-    private byte[] signature;
-    private byte[] dscRsaMod;
+    private byte[] lds;
+    private byte[] attrs;
+    private byte[] sig;
+    private byte[] mod;
+    private int ldsLen;
+    private int attrsLen;
+    // The decryptedSigHead should be removed if further unused
     private final byte[] decryptedSigHead = Hex.hexStringToBytes("3031300d060960864801650304020105000420");
 
     final String TAG = "ProofData";
 
     public void setMrz(byte[] mrz) {
+        assert mrz.length == MRZ_LENGTH;
         this.mrz = mrz;
     }
 
-    public void setSignature(byte[] sig) {
-        this.signature = sig;
+    public void setSig(byte[] sig) {
+        assert sig.length <= MAX_RSA_LENGTH;
+        this.sig = sig;
     }
 
-    public void setDscRsaMod(byte[] dscRsaMod) {
-        this.dscRsaMod = dscRsaMod;
+    public void setMod(byte[] mod) {
+        assert mod.length <= MAX_RSA_LENGTH;
+        this.mod = mod;
     }
 
-    public void setEc(byte[] ec) {
-        this.ec = ec;
+    public void setAttrs(byte[] attrs) {
+        assert attrs.length <= MAX_ATTRS_LENGTH;
+        this.attrsLen = attrs.length*8;
+        this.attrs = Arrays.copyOf(attrs, MAX_ATTRS_LENGTH); // Pad with zeros up to that length
     }
 
-    public void setEncapContent(byte[] encapContent) {
-        this.encapContent = encapContent;
-    }
-
-    public void verify() {
-        assert this.mrz.length == 93;
-
-        assert this.encapContent.length == 219;
-
-        assert this.ec.length == 74;
-
-        assert this.signature.length <= 512;
-
-        assert this.dscRsaMod.length <= 512;
+    public void setLds(byte[] lds) {
+        assert lds.length <= MAX_LDS_LENGTH;
+        this.ldsLen = lds.length*8;
+        this.lds = Arrays.copyOf(lds, MAX_LDS_LENGTH);
     }
 
     public String exportJson() {
         JSONObject res = new JSONObject();
         try {
             res.put("mrz", new JSONArray(toBinaryArray(this.mrz)))
-                    .put("encapContent", new JSONArray(toBinaryArray(this.encapContent)))
-                    .put("ec", new JSONArray(toBinaryArray(this.ec)))
-                    .put("decryptedSigHead", new JSONArray(toBinaryArray(this.decryptedSigHead)))
-                    .put("sig", new JSONArray(toStringHexArray(this.signature, BYTES_PER_STRING)))
-                    .put("mod", new JSONArray(toStringHexArray(this.dscRsaMod, BYTES_PER_STRING)));
+                    .put("lds", new JSONArray(toBinaryArray(this.lds)))
+                    .put("ldsLen", this.ldsLen)
+                    .put("attrs", new JSONArray(toBinaryArray(this.attrs)))
+                    .put("attrsLen", this.attrsLen)
+                    .put("sig", new JSONArray(toStringHexArray(this.sig, BYTES_PER_STRING)))
+                    .put("mod", new JSONArray(toStringHexArray(this.mod, BYTES_PER_STRING)));
 
             return res.toString();
         } catch (JSONException e) {
