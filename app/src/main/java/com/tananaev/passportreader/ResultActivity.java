@@ -18,8 +18,14 @@ package com.tananaev.passportreader;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatActivity;
+
+import android.util.Log;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ResultActivity extends AppCompatActivity {
 
@@ -33,8 +39,15 @@ public class ResultActivity extends AppCompatActivity {
     public static final String KEY_PASSIVE_AUTH = "passiveAuth";
     public static final String KEY_CHIP_AUTH = "chipAuth";
 
+    public static final String TAG = "ResultActivity";
+
+    private View mainLayout, loadingLayout;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        mainLayout = findViewById(R.id.main_layout);
+        loadingLayout = findViewById(R.id.loading_layout);
+
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_result);
 
@@ -49,6 +62,30 @@ public class ResultActivity extends AppCompatActivity {
         if (getIntent().hasExtra(KEY_PHOTO)) {
             ((ImageView) findViewById(R.id.view_photo)).setImageBitmap((Bitmap) getIntent().getParcelableExtra(KEY_PHOTO));
         }
+    }
+
+    public void generateProof(View v) {
+        Log.w(TAG, "Proof clicked!");
+
+        ExecutorService es = Executors.newFixedThreadPool(1);
+
+        ProofTask pt = new ProofTask(getAssets(), new ProofResultCallback() {
+            @Override
+            public void onComplete(ProofResult r) {
+                Log.w(TAG, "Proof: " + r.proof);
+                Log.w(TAG, "Inputs: " + r.inputs);
+                Log.w(TAG, "Error: " + r.error);
+
+                runOnUiThread(() -> setProofText(r.proof));
+            }
+        });
+
+        setProofText("Performing proof (this may take a while)...");
+        es.execute(pt);
+    }
+
+    public void setProofText(String text) {
+        ((TextView) findViewById(R.id.output_proof)).setText(text);
     }
 
 }
