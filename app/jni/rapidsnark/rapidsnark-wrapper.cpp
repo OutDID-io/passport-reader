@@ -56,10 +56,10 @@ extern "C" jboolean Java_com_tananaev_passportreader_RapidSnark_prove (
     const unsigned long zkey_size = AAsset_getLength64(zkey_asset);
 
     jbyte* proof_contents = env->GetByteArrayElements(proof, 0);
-    const unsigned long proof_size = env->GetArrayLength(proof);
+    unsigned long proof_size = env->GetArrayLength(proof);
 
     jbyte* inputs_contents = env->GetByteArrayElements(public_inputs, 0);
-    const unsigned long inputs_size = env->GetArrayLength(public_inputs);
+    unsigned long inputs_size = env->GetArrayLength(public_inputs);
 
     jbyte* error_contents = env->GetByteArrayElements(error, 0);
     const unsigned long error_size = env->GetArrayLength(error);
@@ -68,7 +68,9 @@ extern "C" jboolean Java_com_tananaev_passportreader_RapidSnark_prove (
     debug_print_file(zkey_asset);
 
     __android_log_print(ANDROID_LOG_VERBOSE, APPNAME, "Proof starting");
-    int res = groth16_prover(zkey_contents, zkey_size, witness_contents, witness_size, (char*) proof_contents, proof_size, (char*) inputs_contents, inputs_size, (char*) error_contents, error_size);
+    int res = groth16_prover(zkey_contents, zkey_size, witness_contents, witness_size, (char*) proof_contents,
+                             &proof_size, (char*) inputs_contents,
+                             &inputs_size, (char*) error_contents, error_size);
     __android_log_print(ANDROID_LOG_VERBOSE, APPNAME, "Proof result: %d", res);
 
     env->ReleaseByteArrayElements(proof, proof_contents, 0); //Copies changes to proof_contents back to JVM
